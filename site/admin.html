@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Paneli | Diş Hekimi Abdullah Cirit</title>
+  <meta name="description" content="Yönetim paneli.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="canonical" href="https://dtabdullahcirit.com/admin.html">
+  <meta property="og:locale" content="tr_TR">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Diş Hekimi Abdullah Cirit">
+  <meta property="og:title" content="Admin Paneli | Diş Hekimi Abdullah Cirit">
+  <meta property="og:description" content="Yönetim paneli.">
+  <meta property="og:url" content="https://dtabdullahcirit.com/admin.html">
+  <meta property="og:image" content="https://dtabdullahcirit.com/assets/perf/clinic-hero.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Admin Paneli | Diş Hekimi Abdullah Cirit">
+  <meta name="twitter:description" content="Yönetim paneli.">
+  <meta name="twitter:image" content="https://dtabdullahcirit.com/assets/perf/clinic-hero.webp">
+  <meta name="theme-color" content="#04746d">
+  <link rel="stylesheet" href="page.css?v=doctor-crop">
+</head>
+<body>
+  <div class="login-screen" id="loginScreen">
+    <form class="login-card" id="loginForm" autocomplete="off">
+      <h1>Admin Girişi</h1>
+      <p>Randevu ve görüş/öneri taleplerini görmek için şifre girin.</p>
+      <input type="password" id="adminPassword" placeholder="Şifre" aria-label="Şifre" required autocomplete="current-password">
+      <button type="submit">Giriş Yap</button>
+      <small id="loginError" aria-live="polite"></small>
+    </form>
+  </div>
+
+  <header class="page-header">
+    <a class="brand" href="index.html"><span></span><strong>Diş Hekimi Abdullah Cirit</strong></a>
+    <nav>
+      <a href="index.html">Siteye Dön</a>
+      <a href="online-randevu.html">Randevu Formu</a>
+      <a href="sikayetler.html">Görüş Formu</a>
+      <a href="#" id="logoutLink">Çıkış</a>
+    </nav>
+  </header>
+
+  <main id="adminContent" class="locked">
+    <section class="hero small admin-hero">
+      <div>
+        <p>Admin Paneli</p>
+        <h1>Talepler</h1>
+        <span>Online randevu ve görüş/öneri formlarından gelen kayıtlar burada listelenir.</span>
+      </div>
+    </section>
+
+    <section class="content admin-page">
+      <div class="admin-toolbar">
+        <div>
+          <h2>Gelen Kayıtlar</h2>
+          <p id="requestSummary">Kayıtlar yükleniyor.</p>
+        </div>
+        <div class="admin-actions">
+          <button class="button secondary" id="showAppointments" type="button">Randevular</button>
+          <button class="button secondary" id="showComplaints" type="button">Görüşler</button>
+          <button class="button secondary" id="exportCurrent" type="button">Aktif Listeyi İndir</button>
+          <button class="button secondary" id="exportAll" type="button">Tümünü İndir</button>
+          <button id="clearRequests" type="button">Tümünü Temizle</button>
+        </div>
+      </div>
+
+      <div class="request-table-wrap">
+        <table class="request-table">
+          <thead id="requestHead"></thead>
+          <tbody id="requestRows"></tbody>
+        </table>
+      </div>
+
+      <div class="empty-state" id="emptyState">Henüz kayıt yok.</div>
+    </section>
+  </main>
+
+  <script>
+    let csrfToken = '';
+    let activeType = 'appointments';
+
+    const loginScreen = document.querySelector('#loginScreen');
+    const loginForm = document.querySelector('#loginForm');
+    const loginError = document.querySelector('#loginError');
+    const adminContent = document.querySelector('#adminContent');
+    const head = document.querySelector('#requestHead');
+    const rows = document.querySelector('#requestRows');
+    const emptyState = document.querySelector('#emptyState');
+    const summary = document.querySelector('#requestSummary');
+    const clearButton = document.querySelector('#clearRequests');
+    const exportCurrent = document.querySelector('#exportCurrent');
+    const exportAll = document.querySelector('#exportAll');
+    const logoutLink = document.querySelector('#logoutLink');
+    const showAppointments = document.querySelector('#showAppointments');
+    const showComplaints = document.querySelector('#showComplaints');
+
+    const columns = {
+      appointments: [
+        ['createdAt', 'Tarih'],
+        ['name', 'Ad Soyad'],
+        ['phone', 'Telefon'],
+        ['treatment', 'Tedavi'],
+        ['date', 'Tercih Tarihi'],
+        ['message', 'Mesaj']
+      ],
+      complaints: [
+        ['createdAt', 'Tarih'],
+        ['name', 'Ad Soyad'],
+        ['phone', 'Telefon'],
+        ['topic', 'Konu'],
+        ['message', 'Görüş / Öneri']
+      ]
+    };
+
+    function formatDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '-';
+      return new Intl.DateTimeFormat('tr-TR', {
+        dateStyle: 'short',
+        timeStyle: 'short'
+      }).format(date);
+    }
+
+    function setText(parent, text) {
+      parent.textContent = text || '-';
+    }
+
+    function renderHead() {
+      head.replaceChildren();
+      const tr = document.createElement('tr');
+      columns[activeType].forEach(([, label]) => {
+        const th = document.createElement('th');
+        setText(th, label);
+        tr.appendChild(th);
+      });
+      head.appendChild(tr);
+    }
+
+    function renderRows(items) {
+      rows.replaceChildren();
+      renderHead();
+      summary.textContent = `${items.length} ${activeType === 'appointments' ? 'randevu talebi' : 'görüş kaydı'} görünüyor.`;
+      emptyState.style.display = items.length ? 'none' : 'block';
+
+      items.forEach((item) => {
+        const tr = document.createElement('tr');
+        columns[activeType].forEach(([key]) => {
+          const td = document.createElement('td');
+          if (key === 'createdAt') {
+            setText(td, formatDate(item[key]));
+          } else if (key === 'phone' && item[key]) {
+            const link = document.createElement('a');
+            link.href = `tel:${String(item[key]).replace(/[^\d+]/g, '')}`;
+            setText(link, item[key]);
+            td.appendChild(link);
+          } else {
+            setText(td, item[key]);
+          }
+          tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+    }
+
+    function loadRequests() {
+      fetch(`/api/${activeType}`, { credentials: 'same-origin' })
+        .then((response) => response.ok ? response.json() : Promise.reject(response))
+        .then(renderRows)
+        .catch(() => {
+          loginScreen.style.display = 'grid';
+          adminContent.classList.add('locked');
+        });
+    }
+
+    function unlockAdmin(token) {
+      csrfToken = token;
+      loginScreen.style.display = 'none';
+      adminContent.classList.remove('locked');
+      loadRequests();
+    }
+
+    function checkSession() {
+      fetch('/api/session', { credentials: 'same-origin' })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((session) => unlockAdmin(session.csrfToken))
+        .catch(() => {
+          loginScreen.style.display = 'grid';
+          adminContent.classList.add('locked');
+        });
+    }
+
+    loginForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      loginError.textContent = '';
+      fetch('/api/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: document.querySelector('#adminPassword').value })
+      })
+        .then((response) => response.ok ? response.json() : response.json().then((data) => Promise.reject(data)))
+        .then((result) => unlockAdmin(result.csrfToken))
+        .catch((error) => {
+          loginError.textContent = error?.error || 'Giriş yapılamadı.';
+        });
+    });
+
+    clearButton.addEventListener('click', () => {
+      if (!confirm('Bu listedeki tüm kayıtlar silinsin mi?')) return;
+      fetch(`/api/${activeType}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken }
+      }).finally(loadRequests);
+    });
+
+    exportCurrent.addEventListener('click', () => {
+      window.location.href = `/api/export?type=${activeType}`;
+    });
+
+    exportAll.addEventListener('click', () => {
+      window.location.href = '/api/export?type=all';
+    });
+
+    logoutLink.addEventListener('click', (event) => {
+      event.preventDefault();
+      fetch('/api/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken }
+      }).finally(() => location.reload());
+    });
+
+    showAppointments.addEventListener('click', () => {
+      activeType = 'appointments';
+      loadRequests();
+    });
+
+    showComplaints.addEventListener('click', () => {
+      activeType = 'complaints';
+      loadRequests();
+    });
+
+    checkSession();
+  </script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Görüş ve Önerileriniz | Diş Hekimi Abdullah Cirit</title>
+  <meta name="description" content="Diş Hekimi Abdullah Cirit muayenehanesi için görüş, öneri ve geri bildirim formu.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="canonical" href="https://dtabdullahcirit.com/sikayetler.html">
+  <meta property="og:locale" content="tr_TR">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Diş Hekimi Abdullah Cirit">
+  <meta property="og:title" content="Görüş ve Önerileriniz | Diş Hekimi Abdullah Cirit">
+  <meta property="og:description" content="Diş Hekimi Abdullah Cirit muayenehanesi için görüş, öneri ve geri bildirim formu.">
+  <meta property="og:url" content="https://dtabdullahcirit.com/sikayetler.html">
+  <meta property="og:image" content="https://dtabdullahcirit.com/assets/perf/clinic-hero.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Görüş ve Önerileriniz | Diş Hekimi Abdullah Cirit">
+  <meta name="twitter:description" content="Diş Hekimi Abdullah Cirit muayenehanesi için görüş, öneri ve geri bildirim formu.">
+  <meta name="twitter:image" content="https://dtabdullahcirit.com/assets/perf/clinic-hero.webp">
+  <meta name="theme-color" content="#04746d">
+  <link rel="stylesheet" href="page.css?v=doctor-crop">
+</head>
+<body>
+  <header class="page-header">
+    <a class="brand" href="index.html"><span></span><strong>Diş Hekimi Abdullah Cirit</strong></a>
+    <nav>
+      <a href="index.html">Ana Sayfa</a>
+      <a href="dis-tedavilerimiz.html">Diş Tedavilerimiz</a>
+      <a href="soru-cevap.html">Soru Cevap</a>
+      <a href="online-randevu.html">Online Randevu</a>
+      <a href="telefonla-randevu.html">İletişim</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero small">
+      <div>
+        <p>Geri Bildirim</p>
+        <h1>Görüş ve Önerileriniz</h1>
+        <span>Deneyiminizi paylaşın; klinik ekibi geri bildiriminizi dikkatle değerlendirsin.</span>
+      </div>
+    </section>
+
+    <section class="content appointment-page">
+      <div class="card">
+        <h2>Bize iletin</h2>
+        <p>Randevu, tedavi süreci, iletişim veya klinik deneyimiyle ilgili görüş ve önerilerinizi bu form üzerinden paylaşabilirsiniz.</p>
+        <p>Form gönderildikten sonra bildiriminiz kliniğe iletilir. Ad soyad, telefon ve mesaj alanları zorunludur.</p>
+      </div>
+
+      <form class="card appointment-form" id="complaintForm">
+        <h2>Görüş ve Öneri Formu</h2>
+        <input name="name" required maxlength="100" autocomplete="name" placeholder="Ad Soyad" aria-label="Ad Soyad">
+        <input name="phone" required maxlength="40" autocomplete="tel" inputmode="tel" pattern="[0-9+()\\s-]{10,40}" placeholder="Telefon Numarası" aria-label="Telefon Numarası">
+        <select name="topic" aria-label="Konu">
+          <option>Randevu süreci</option>
+          <option>Tedavi süreci</option>
+          <option>İletişim</option>
+          <option>Klinik deneyimi</option>
+          <option>Öneri</option>
+          <option>Diğer</option>
+        </select>
+        <textarea name="message" required maxlength="1500" placeholder="Görüş veya önerinizi yazın" aria-label="Görüş veya öneri"></textarea>
+        <button type="submit">Gönder</button>
+        <small></small>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector('#complaintForm');
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const complaint = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        createdAt: new Date().toISOString(),
+        name: formData.get('name')?.trim() || '',
+        phone: formData.get('phone')?.trim() || '',
+        topic: formData.get('topic') || '',
+        message: formData.get('message')?.trim() || '',
+        status: 'Yeni'
+      };
+
+      const note = form.querySelector('small');
+      if (!complaint.name || !complaint.phone || !complaint.message) {
+        note.textContent = 'Ad soyad, telefon ve mesaj alanı zorunludur.';
+        return;
+      }
+      note.textContent = 'Geri bildiriminiz alındı. Gönderim kontrol ediliyor...';
+
+      fetch('/api/complaints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(complaint)
+      })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((result) => {
+          note.textContent = result.emailSent
+            ? 'Geri bildiriminiz alındı ve e-postaya iletildi.'
+            : 'Geri bildiriminiz alındı. E-posta gönderimi için sunucu ayarı bekleniyor.';
+          form.reset();
+        })
+        .catch(() => {
+          note.textContent = 'Geri bildiriminiz gönderilemedi. Lütfen telefon veya WhatsApp üzerinden kliniğe ulaşın.';
+        });
+    });
+  </script>
+</body>
+</html>
