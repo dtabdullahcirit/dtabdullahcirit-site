@@ -2,6 +2,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http import cookies
 from pathlib import Path
 from urllib.parse import urlparse
+from datetime import date
 import hashlib
 import hmac
 import json
@@ -99,6 +100,8 @@ class SiteHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/sitemap.xml":
+            return self.handle_sitemap()
         if path == "/api/session":
             return self.handle_session()
         if path == "/api/export":
@@ -349,6 +352,38 @@ class SiteHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def handle_sitemap(self):
+        today = date.today().isoformat()
+        excluded = {"admin.html", "sikayetler.html"}
+        urls = [("", "weekly", "0.9")]
+        for html_file in sorted(ROOT.glob("*.html")):
+            if html_file.name == "index.html" or html_file.name in excluded:
+                continue
+            urls.append((html_file.name, "monthly", "0.7"))
+
+        body = ['<?xml version="1.0" encoding="UTF-8"?>']
+        body.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+        for path, changefreq, priority in urls:
+            loc = f"https://dtabdullahcirit.com/{path}"
+            body.extend(
+                [
+                    "  <url>",
+                    f"    <loc>{loc}</loc>",
+                    f"    <lastmod>{today}</lastmod>",
+                    f"    <changefreq>{changefreq}</changefreq>",
+                    f"    <priority>{priority}</priority>",
+                    "  </url>",
+                ]
+            )
+        body.append("</urlset>")
+
+        data = ("\n".join(body) + "\n").encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/xml; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def send_cookie(self, name, value, max_age):
         secure = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
