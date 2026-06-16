@@ -9,3 +9,11 @@ services:
         value: 3.12.4
       - key: COOKIE_SECURE
         value: true
+      - key: APPOINTMENT_EMAIL_USER
+        value: dtabdullahcirit@gmail.com
+      - key: APPOINTMENT_EMAIL_TO
+        value: dtabdullahcirit@gmail.com
+      - key: APPOINTMENT_EMAIL_PASS
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false

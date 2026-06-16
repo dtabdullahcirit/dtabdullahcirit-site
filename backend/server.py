@@ -535,6 +535,7 @@ def send_email(subject, lines):
     to_address = os.environ.get("APPOINTMENT_EMAIL_TO", user)
     if not user or not password or not to_address:
         return False
+    password = "".join(password.split())
 
     msg = EmailMessage()
     msg["Subject"] = subject

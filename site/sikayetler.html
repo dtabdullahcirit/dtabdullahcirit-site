@@ -99,7 +99,7 @@
         .then((result) => {
           note.textContent = result.emailSent
             ? 'Geri bildiriminiz alındı ve e-postaya iletildi.'
-            : 'Geri bildiriminiz alındı. E-posta gönderimi için sunucu ayarı bekleniyor.';
+            : 'Geri bildiriminiz alındı. Klinik ekibi bildiriminizi değerlendirecektir.';
           form.reset();
         })
         .catch(() => {

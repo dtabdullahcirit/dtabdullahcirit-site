@@ -166,7 +166,7 @@
         .then((result) => {
           note.textContent = result.emailSent
             ? 'Randevu talebiniz alındı ve e-postaya iletildi.'
-            : 'Randevu talebiniz alındı. E-posta gönderimi için sunucu ayarı bekleniyor.';
+            : 'Randevu talebiniz alındı. Klinik ekibi sizinle iletişime geçecektir.';
           form.reset();
         })
         .catch(() => {
