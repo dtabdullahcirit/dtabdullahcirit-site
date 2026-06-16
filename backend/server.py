@@ -556,8 +556,8 @@ if __name__ == "__main__":
     load_dotenv()
     if not os.environ.get("ADMIN_PASSWORD") and not os.environ.get("ADMIN_PASSWORD_HASH"):
         print("WARNING: ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is not set. Admin login is disabled.")
-    port = int(os.environ.get("PORT", "4190"))
-    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", 10000))
+    host = "0.0.0.0"
     server = ThreadingHTTPServer((host, port), SiteHandler)
     print(f"Serving {ROOT} on http://{host}:{port}")
     server.serve_forever()
