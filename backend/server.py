@@ -530,11 +530,26 @@ def send_complaint_email(request):
 
 
 def send_email(subject, lines):
-    user = os.environ.get("APPOINTMENT_EMAIL_USER")
-    password = os.environ.get("APPOINTMENT_EMAIL_PASS")
+    user = os.environ.get("APPOINTMENT_EMAIL_USER", "dtabdullahcirit@gmail.com").strip()
+    password = (
+        os.environ.get("APPOINTMENT_EMAIL_PASS")
+        or os.environ.get("GMAIL_APP_PASSWORD")
+        or os.environ.get("EMAIL_PASSWORD")
+        or os.environ.get("SMTP_PASSWORD")
+        or ""
+    )
     to_address = os.environ.get("APPOINTMENT_EMAIL_TO", user)
     if not user or not password or not to_address:
+        missing = []
+        if not user:
+            missing.append("APPOINTMENT_EMAIL_USER")
+        if not password:
+            missing.append("APPOINTMENT_EMAIL_PASS")
+        if not to_address:
+            missing.append("APPOINTMENT_EMAIL_TO")
+        print(f"Email send skipped: missing environment value(s): {', '.join(missing)}", file=sys.stderr)
         return False
+    to_address = to_address.strip()
     password = "".join(password.split())
 
     msg = EmailMessage()
@@ -547,9 +562,10 @@ def send_email(subject, lines):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
             smtp.login(user, password)
             smtp.send_message(msg)
+        print(f"Email sent successfully to {to_address}", file=sys.stderr)
         return True
     except Exception as exc:
-        print(f"Email send failed: {exc}", file=sys.stderr)
+        print(f"Email send failed for {user} -> {to_address}: {type(exc).__name__}: {exc}", file=sys.stderr)
         return False
 
 
