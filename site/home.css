@@ -773,7 +773,7 @@
     .floating .randevu { background: var(--green-dark); }
     .floating .randevu::before { content: "▣"; }
     @media (max-width: 1100px) {
-      .site-header .container { grid-template-columns: auto auto; }
+      .site-header .container { grid-template-columns: minmax(0, 1fr) auto; }
       .mobile-toggle { display: inline-grid; place-items: center; justify-self: end; }
       .main-nav {
         grid-column: 1 / -1;
@@ -814,9 +814,10 @@
       .brand strong { font-size: 18px; }
       .hero, .slide img, .hero-content { min-height: 390px; }
       .hero-content { padding: 42px 0 58px; }
-      .hero-content h1 { font-size: clamp(31px, 10vw, 38px); line-height: 1.08; max-width: 100%; overflow-wrap: normal; }
-      .hero-text { max-width: calc(100vw - 34px); font-size: 15px; line-height: 1.5; }
-      .hero-actions { max-width: calc(100vw - 34px); gap: 10px; }
+      .hero-content { min-width: 0; }
+      .hero-content h1 { font-size: clamp(31px, 10vw, 38px); line-height: 1.08; max-width: 100%; overflow-wrap: anywhere; }
+      .hero-text { width: 100%; max-width: 100%; font-size: 15px; line-height: 1.5; }
+      .hero-actions { width: 100%; max-width: 100%; gap: 10px; }
       .hero-actions .btn { min-width: 0; padding: 0 16px; }
       section { padding: 56px 0; }
       .mission, .quick-menu, .check-list, .feature-row, .form-grid, .footer-grid {
