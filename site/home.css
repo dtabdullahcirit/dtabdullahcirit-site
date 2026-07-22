@@ -575,11 +575,11 @@
       box-shadow: var(--shadow);
       min-height: 100%;
     }
-    .appointment-map img {
+    .appointment-map iframe {
       width: 100%;
       height: 340px;
       display: block;
-      object-fit: cover;
+      border: 0;
     }
     .map-cta {
       display: flex;

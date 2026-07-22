@@ -30,7 +30,7 @@ BACKUP_ROOT = DATA_ROOT / "backups"
 LEGACY_APPOINTMENTS_FILE = BACKEND_ROOT / "appointments.json"
 LEGACY_COMPLAINTS_FILE = BACKEND_ROOT / "complaints.json"
 ENV_FILES = [PACKAGE_ROOT / ".env", BACKEND_ROOT / ".env"]
-PRIVACY_NOTICE_VERSION = "2026-07-21"
+PRIVACY_NOTICE_VERSION = "2026-07-22"
 COMPROMISED_ADMIN_PASSWORD_HASHES = {
     "fb0e04fa274453aa80e921acb176cc77763ec1a4f3b07c809a21032a2e32d128",
 }
@@ -114,7 +114,7 @@ class SiteHandler(SimpleHTTPRequestHandler):
             "font-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
             "connect-src 'self'; "
-            "frame-src 'none'; "
+            "frame-src https://www.google.com; "
             "base-uri 'self'; form-action 'self'; object-src 'none'",
         )
         super().end_headers()
