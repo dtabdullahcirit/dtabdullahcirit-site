@@ -51,9 +51,12 @@
 
       <form class="card appointment-form" id="complaintForm">
         <h2>Görüş ve Öneri Formu</h2>
-        <input name="name" required maxlength="100" autocomplete="name" placeholder="Ad Soyad" aria-label="Ad Soyad">
-        <input name="phone" required maxlength="40" autocomplete="tel" inputmode="tel" pattern="[0-9+()\\s-]{10,40}" placeholder="Telefon Numarası" aria-label="Telefon Numarası">
-        <select name="topic" aria-label="Konu">
+        <label class="form-label" for="feedbackName">Ad Soyad <span class="required-mark" aria-hidden="true">*</span></label>
+        <input id="feedbackName" name="name" required maxlength="100" autocomplete="name" placeholder="Adınız ve soyadınız">
+        <label class="form-label" for="feedbackPhone">Telefon Numarası <span class="required-mark" aria-hidden="true">*</span></label>
+        <input id="feedbackPhone" name="phone" required maxlength="40" autocomplete="tel" inputmode="tel" pattern="[0-9+()\s-]{10,40}" placeholder="05xx xxx xx xx">
+        <label class="form-label" for="feedbackTopic">Konu <span class="required-mark" aria-hidden="true">*</span></label>
+        <select id="feedbackTopic" name="topic" required>
           <option>Randevu süreci</option>
           <option>Tedavi süreci</option>
           <option>İletişim</option>
@@ -61,50 +64,61 @@
           <option>Öneri</option>
           <option>Diğer</option>
         </select>
-        <textarea name="message" required maxlength="1500" placeholder="Görüş veya önerinizi yazın" aria-label="Görüş veya öneri"></textarea>
-        <button type="submit">Gönder</button>
-        <small></small>
+        <label class="form-label" for="feedbackMessage">Görüş veya öneriniz <span class="required-mark" aria-hidden="true">*</span></label>
+        <textarea id="feedbackMessage" name="message" required maxlength="1500" placeholder="Görüş veya önerinizi yazın"></textarea>
+        <label class="consent-row" for="feedbackPrivacy">
+          <input id="feedbackPrivacy" name="privacyAcknowledged" type="checkbox" required>
+          <span><a href="kvkk-aydinlatma-metni.html" target="_blank" rel="noopener">KVKK Aydınlatma Metni</a>'ni okudum. <span class="required-mark" aria-hidden="true">*</span></span>
+        </label>
+        <button type="submit">Geri Bildirimi Gönder</button>
+        <p class="form-status" role="status" aria-live="polite"></p>
       </form>
     </section>
   </main>
 
   <script>
     const form = document.querySelector('#complaintForm');
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (!form.reportValidity()) return;
+
       const formData = new FormData(form);
       const complaint = {
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        createdAt: new Date().toISOString(),
         name: formData.get('name')?.trim() || '',
         phone: formData.get('phone')?.trim() || '',
         topic: formData.get('topic') || '',
         message: formData.get('message')?.trim() || '',
-        status: 'Yeni'
+        privacyAcknowledged: formData.get('privacyAcknowledged') === 'on'
       };
 
-      const note = form.querySelector('small');
-      if (!complaint.name || !complaint.phone || !complaint.message) {
-        note.textContent = 'Ad soyad, telefon ve mesaj alanı zorunludur.';
-        return;
-      }
-      note.textContent = 'Geri bildiriminiz alındı. Gönderim kontrol ediliyor...';
+      const status = form.querySelector('.form-status');
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      form.setAttribute('aria-busy', 'true');
+      status.dataset.state = '';
+      status.textContent = 'Geri bildiriminiz güvenli biçimde gönderiliyor...';
 
-      fetch('/api/complaints', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(complaint)
-      })
-        .then((response) => response.ok ? response.json() : Promise.reject())
-        .then((result) => {
-          note.textContent = result.emailSent
-            ? 'Geri bildiriminiz alındı ve e-postaya iletildi.'
-            : 'Geri bildiriminiz alındı. Klinik ekibi bildiriminizi değerlendirecektir.';
-          form.reset();
-        })
-        .catch(() => {
-          note.textContent = 'Geri bildiriminiz gönderilemedi. Lütfen telefon veya WhatsApp üzerinden kliniğe ulaşın.';
+      try {
+        const response = await fetch('/api/complaints', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(complaint)
         });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = Array.isArray(result.errors) ? result.errors.join(' ') : result.error;
+          throw new Error(detail || 'Geri bildiriminiz gönderilemedi.');
+        }
+        status.dataset.state = 'success';
+        status.textContent = 'Geri bildiriminiz alındı. Klinik ekibi bildiriminizi değerlendirecektir.';
+        form.reset();
+      } catch (error) {
+        status.dataset.state = 'error';
+        status.textContent = `${error.message} Lütfen +90 552 892 67 84 numarasını arayın veya WhatsApp üzerinden ulaşın.`;
+      } finally {
+        button.disabled = false;
+        form.removeAttribute('aria-busy');
+      }
     });
   </script>
 </body>

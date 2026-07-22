@@ -22,11 +22,22 @@ ROOT = PACKAGE_ROOT / "site"
 if not ROOT.exists():
     ROOT = PACKAGE_ROOT / "outputs"
 BACKEND_ROOT = Path(__file__).resolve().parent
-APPOINTMENTS_FILE = BACKEND_ROOT / "appointments.json"
-COMPLAINTS_FILE = BACKEND_ROOT / "complaints.json"
-BACKUP_ROOT = BACKEND_ROOT / "backups"
+configured_data_dir = os.environ.get("DATA_DIR", "").strip()
+DATA_ROOT = Path(configured_data_dir).resolve() if configured_data_dir else BACKEND_ROOT / "data"
+APPOINTMENTS_FILE = DATA_ROOT / "appointments.json"
+COMPLAINTS_FILE = DATA_ROOT / "complaints.json"
+BACKUP_ROOT = DATA_ROOT / "backups"
+LEGACY_APPOINTMENTS_FILE = BACKEND_ROOT / "appointments.json"
+LEGACY_COMPLAINTS_FILE = BACKEND_ROOT / "complaints.json"
 ENV_FILES = [PACKAGE_ROOT / ".env", BACKEND_ROOT / ".env"]
-DEFAULT_ADMIN_PASSWORD_HASH = "fb0e04fa274453aa80e921acb176cc77763ec1a4f3b07c809a21032a2e32d128"
+PRIVACY_NOTICE_VERSION = "2026-07-21"
+COMPROMISED_ADMIN_PASSWORD_HASHES = {
+    "fb0e04fa274453aa80e921acb176cc77763ec1a4f3b07c809a21032a2e32d128",
+}
+PERMANENT_REDIRECTS = {
+    "/dis-klinigi-randevu.html": "/online-randevu.html",
+    "/tedavi-porselen-laminalar.html": "/tedavi-porselen-lamina.html",
+}
 
 MAX_BODY_BYTES = 12_000
 SESSION_TTL_SECONDS = 60 * 60 * 8
@@ -34,6 +45,7 @@ SESSIONS = {}
 RATE_BUCKETS = {}
 DATA_LOCK = threading.Lock()
 ALLOWED_TREATMENTS = {
+    "Genel Muayene / Kontrol",
     "Gülüş Tasarımı",
     "Estetik Diş Tedavisi",
     "Diş Beyazlatma",
@@ -48,6 +60,14 @@ ALLOWED_TREATMENTS = {
     "Cerrahi Diş Çekimi",
     "Gömük Yirmi Yaş Diş Çekimi",
     "Sinüs Kaldırma",
+}
+ALLOWED_TOPICS = {
+    "Randevu süreci",
+    "Tedavi süreci",
+    "İletişim",
+    "Klinik deneyimi",
+    "Öneri",
+    "Diğer",
 }
 
 
@@ -89,18 +109,24 @@ class SiteHandler(SimpleHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; "
-            "img-src 'self' https://www.google.com https://maps.gstatic.com data:; "
+            "img-src 'self' data:; "
             "style-src 'self' 'unsafe-inline'; "
             "font-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
             "connect-src 'self'; "
-            "frame-src https://www.google.com; "
+            "frame-src 'none'; "
             "base-uri 'self'; form-action 'self'; object-src 'none'",
         )
         super().end_headers()
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path in PERMANENT_REDIRECTS:
+            self.send_response(301)
+            self.send_header("Location", PERMANENT_REDIRECTS[path])
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if path == "/sitemap.xml":
             return self.handle_sitemap()
         if path == "/api/session":
@@ -200,6 +226,12 @@ class SiteHandler(SimpleHTTPRequestHandler):
         if not self.check_rate_limit("login", limit=8, window_seconds=10 * 60):
             return self.send_json({"ok": False, "error": "Çok fazla deneme. Lütfen sonra tekrar deneyin."}, status=429)
 
+        if not admin_auth_configured():
+            return self.send_json(
+                {"ok": False, "error": "Yönetici girişi henüz güvenli biçimde yapılandırılmamış."},
+                status=503,
+            )
+
         payload = self.read_json_payload()
         if payload is None:
             return
@@ -221,6 +253,9 @@ class SiteHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps({"ok": True, "csrfToken": csrf}).encode("utf-8"))
 
     def handle_logout(self):
+        session = self.current_session()
+        if session and self.headers.get("X-CSRF-Token") != session["csrf"]:
+            return self.send_json({"ok": False, "error": "CSRF doğrulaması başarısız."}, status=403)
         session_id = self.cookie_value("clinic_admin_session")
         if session_id:
             SESSIONS.pop(session_id, None)
@@ -268,10 +303,23 @@ class SiteHandler(SimpleHTTPRequestHandler):
         if errors:
             return self.send_json({"ok": False, "errors": errors}, status=400)
 
-        prepend_json_item(APPOINTMENTS_FILE, cleaned)
-
-        email_sent = send_appointment_email(cleaned)
-        self.send_json({"ok": True, "emailSent": email_sent})
+        delivery_required = email_delivery_required()
+        if delivery_required:
+            email_sent = send_appointment_email(cleaned)
+            if not email_sent:
+                return self.send_json(
+                    {
+                        "ok": False,
+                        "error": "Randevu talebi e-posta sistemine iletilemedi.",
+                    },
+                    status=503,
+                )
+            cache_stored = self.store_delivery_cache(APPOINTMENTS_FILE, cleaned)
+        else:
+            prepend_json_item(APPOINTMENTS_FILE, cleaned)
+            email_sent = send_appointment_email(cleaned)
+            cache_stored = True
+        self.send_json({"ok": True, "emailSent": email_sent, "cacheStored": cache_stored})
 
     def handle_complaint_post(self):
         if not self.check_rate_limit("complaint", limit=5, window_seconds=10 * 60):
@@ -285,10 +333,31 @@ class SiteHandler(SimpleHTTPRequestHandler):
         if errors:
             return self.send_json({"ok": False, "errors": errors}, status=400)
 
-        prepend_json_item(COMPLAINTS_FILE, cleaned)
+        delivery_required = email_delivery_required()
+        if delivery_required:
+            email_sent = send_complaint_email(cleaned)
+            if not email_sent:
+                return self.send_json(
+                    {
+                        "ok": False,
+                        "error": "Geri bildirim e-posta sistemine iletilemedi.",
+                    },
+                    status=503,
+                )
+            cache_stored = self.store_delivery_cache(COMPLAINTS_FILE, cleaned)
+        else:
+            prepend_json_item(COMPLAINTS_FILE, cleaned)
+            email_sent = send_complaint_email(cleaned)
+            cache_stored = True
+        self.send_json({"ok": True, "emailSent": email_sent, "cacheStored": cache_stored})
 
-        email_sent = send_complaint_email(cleaned)
-        self.send_json({"ok": True, "emailSent": email_sent})
+    def store_delivery_cache(self, path, item):
+        try:
+            prepend_json_item(path, item)
+            return True
+        except OSError as exc:
+            print(f"Temporary admin cache write failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return False
 
     def require_admin(self, require_csrf=False):
         session = self.current_session()
@@ -356,7 +425,13 @@ class SiteHandler(SimpleHTTPRequestHandler):
 
     def handle_sitemap(self):
         today = date.today().isoformat()
-        excluded = {"admin.html", "sikayetler.html"}
+        excluded = {
+            "admin.html",
+            "dis-klinigi-randevu.html",
+            "kvkk-aydinlatma-metni.html",
+            "sikayetler.html",
+            "tedavi-porselen-laminalar.html",
+        }
         urls = [("", "weekly", "0.9")]
         for html_file in sorted(ROOT.glob("*.html")):
             if html_file.name == "index.html" or html_file.name in excluded:
@@ -416,43 +491,61 @@ def clean_message(value, max_len=1200):
 
 def validate_appointment(payload):
     treatment = clean_text(payload.get("treatment"), 120)
-    if treatment not in ALLOWED_TREATMENTS:
-        treatment = "Belirtilmedi"
+    appointment_date = clean_text(payload.get("date"), 10)
     cleaned = {
-        "id": clean_text(payload.get("id") or secrets.token_urlsafe(12), 80),
-        "createdAt": clean_text(payload.get("createdAt") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), 80),
+        "id": secrets.token_urlsafe(12),
+        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "name": clean_text(payload.get("name"), 100),
         "phone": clean_text(payload.get("phone"), 40),
         "treatment": treatment,
-        "date": clean_text(payload.get("date"), 40),
+        "date": appointment_date,
         "message": clean_message(payload.get("message"), 1200),
+        "privacyNoticeVersion": PRIVACY_NOTICE_VERSION,
         "status": "Yeni",
     }
     errors = []
-    if not cleaned["name"]:
+    if len(cleaned["name"]) < 2:
         errors.append("Ad soyad zorunludur.")
-    if len(re.sub(r"\D", "", cleaned["phone"])) < 10:
+    phone_digits = re.sub(r"\D", "", cleaned["phone"])
+    if not 10 <= len(phone_digits) <= 15:
         errors.append("Geçerli bir telefon numarası zorunludur.")
+    if treatment not in ALLOWED_TREATMENTS:
+        errors.append("Lütfen geçerli bir tedavi veya kontrol nedeni seçin.")
+    if appointment_date:
+        try:
+            if date.fromisoformat(appointment_date) < date.today():
+                errors.append("Tercih edilen tarih geçmişte olamaz.")
+        except ValueError:
+            errors.append("Tercih edilen tarih geçerli değil.")
+    if payload.get("privacyAcknowledged") is not True:
+        errors.append("KVKK Aydınlatma Metni'ni okuduğunuzu doğrulamanız gerekir.")
     return cleaned, errors
 
 
 def validate_complaint(payload):
+    topic = clean_text(payload.get("topic"), 120)
     cleaned = {
-        "id": clean_text(payload.get("id") or secrets.token_urlsafe(12), 80),
-        "createdAt": clean_text(payload.get("createdAt") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), 80),
+        "id": secrets.token_urlsafe(12),
+        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "name": clean_text(payload.get("name"), 100),
         "phone": clean_text(payload.get("phone"), 40),
-        "topic": clean_text(payload.get("topic"), 120),
+        "topic": topic,
         "message": clean_message(payload.get("message"), 1500),
+        "privacyNoticeVersion": PRIVACY_NOTICE_VERSION,
         "status": "Yeni",
     }
     errors = []
-    if not cleaned["name"]:
+    if len(cleaned["name"]) < 2:
         errors.append("Ad soyad zorunludur.")
-    if len(re.sub(r"\D", "", cleaned["phone"])) < 10:
+    phone_digits = re.sub(r"\D", "", cleaned["phone"])
+    if not 10 <= len(phone_digits) <= 15:
         errors.append("Geçerli bir telefon numarası zorunludur.")
+    if topic not in ALLOWED_TOPICS:
+        errors.append("Lütfen geçerli bir konu seçin.")
     if not cleaned["message"]:
         errors.append("Mesaj alanı zorunludur.")
+    if payload.get("privacyAcknowledged") is not True:
+        errors.append("KVKK Aydınlatma Metni'ni okuduğunuzu doğrulamanız gerekir.")
     return cleaned, errors
 
 
@@ -504,6 +597,7 @@ def prepend_json_item(path, item):
 
 
 def write_json_list_unlocked(path, items):
+    path.parent.mkdir(parents=True, exist_ok=True)
     backup_json_file(path)
     temp_path = path.with_suffix(path.suffix + ".tmp")
     temp_path.write_text(json.dumps(items[:500], ensure_ascii=False, indent=2), encoding="utf-8")
@@ -523,15 +617,48 @@ def backup_json_file(path):
             copy2(path, backup_path)
 
 
-def verify_admin_password(password):
-    configured_hash = os.environ.get("ADMIN_PASSWORD_HASH", "").strip() or DEFAULT_ADMIN_PASSWORD_HASH
+def initialize_storage():
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    for legacy_path, data_path in (
+        (LEGACY_APPOINTMENTS_FILE, APPOINTMENTS_FILE),
+        (LEGACY_COMPLAINTS_FILE, COMPLAINTS_FILE),
+    ):
+        if not data_path.exists():
+            if legacy_path.exists():
+                copy2(legacy_path, data_path)
+            else:
+                data_path.write_text("[]\n", encoding="utf-8")
+
+
+def admin_auth_configured():
+    configured_hash = os.environ.get("ADMIN_PASSWORD_HASH", "").strip().lower()
     configured_password = os.environ.get("ADMIN_PASSWORD", "").strip()
     if configured_hash:
+        return (
+            re.fullmatch(r"[0-9a-f]{64}", configured_hash) is not None
+            and configured_hash not in COMPROMISED_ADMIN_PASSWORD_HASHES
+        )
+    return len(configured_password) >= 12
+
+
+def verify_admin_password(password):
+    configured_hash = os.environ.get("ADMIN_PASSWORD_HASH", "").strip().lower()
+    configured_password = os.environ.get("ADMIN_PASSWORD", "").strip()
+    if configured_hash:
+        if (
+            re.fullmatch(r"[0-9a-f]{64}", configured_hash) is None
+            or configured_hash in COMPROMISED_ADMIN_PASSWORD_HASHES
+        ):
+            return False
         digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
         return hmac.compare_digest(digest, configured_hash)
-    if configured_password:
+    if len(configured_password) >= 12:
         return hmac.compare_digest(password, configured_password)
     return False
+
+
+def email_delivery_required():
+    return os.environ.get("EMAIL_DELIVERY_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
 
 
 def send_appointment_email(request):
@@ -546,6 +673,7 @@ def send_appointment_email(request):
             f"Tercih Tarihi: {request.get('date', '-')}",
             f"Mesaj: {request.get('message', '-')}",
             f"Kayıt Zamanı: {request.get('createdAt', '-')}",
+            f"KVKK Aydınlatma Sürümü: {request.get('privacyNoticeVersion', '-')}",
         ],
     )
 
@@ -561,6 +689,7 @@ def send_complaint_email(request):
             f"Konu: {request.get('topic', '-')}",
             f"Mesaj: {request.get('message', '-')}",
             f"Kayıt Zamanı: {request.get('createdAt', '-')}",
+            f"KVKK Aydınlatma Sürümü: {request.get('privacyNoticeVersion', '-')}",
         ],
     )
 
@@ -607,10 +736,11 @@ def send_email(subject, lines):
 
 if __name__ == "__main__":
     load_dotenv()
-    if not os.environ.get("ADMIN_PASSWORD") and not os.environ.get("ADMIN_PASSWORD_HASH"):
+    initialize_storage()
+    if not admin_auth_configured():
         print("WARNING: ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is not set. Admin login is disabled.")
     port = int(os.environ.get("PORT", 10000))
-    host = "0.0.0.0"
+    host = os.environ.get("HOST", "0.0.0.0").strip() or "0.0.0.0"
     server = ThreadingHTTPServer((host, port), SiteHandler)
     print(f"Serving {ROOT} on http://{host}:{port}")
     server.serve_forever()

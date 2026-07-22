@@ -1,13 +1,18 @@
 services:
   - type: web
     name: dtabdullahcirit-site
-    env: python
+    runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python backend/server.py
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.4
+        value: 3.14.3
+      - key: HOST
+        value: 0.0.0.0
       - key: COOKIE_SECURE
+        value: true
+      # Render dosya sistemi geçici olduğundan canlıda yalnızca e-postaya başarıyla iletilen formlar kabul edilir.
+      - key: EMAIL_DELIVERY_REQUIRED
         value: true
       - key: APPOINTMENT_EMAIL_USER
         value: dtabdullahcirit@gmail.com
